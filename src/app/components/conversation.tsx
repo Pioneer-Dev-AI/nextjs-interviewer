@@ -57,12 +57,11 @@ export default function Conversation({
       if (done) break;
 
       let textChunk = new TextDecoder("utf-8").decode(value);
-      let messageChunk = JSON.parse(textChunk);
       setMessages((prevMessages) => {
         const newMessages = [...prevMessages];
         const lastMessageIndex = newMessages.length - 1;
-        if (lastMessageIndex >= 0 && messageChunk.length > 0) {
-          newMessages[lastMessageIndex].text += messageChunk[0].text;
+        if (lastMessageIndex >= 0 && textChunk) {
+          newMessages[lastMessageIndex].text += textChunk;
         }
         return newMessages;
       });

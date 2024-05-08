@@ -1,6 +1,57 @@
-import { NextApiRequest, NextApiResponse, Response } from "next";
+import { NextApiRequest, NextApiResponse, NextResponse } from "next";
 import { prisma } from "@/db.server";
 import { StreamingTextResponse } from "ai";
+import { ChatOllama } from "@langchain/community/chat_models/ollama";
+import { LLMChain } from "langchain/chains";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import { RunnableSequence } from "@langchain/core/runnables";
+
+const PROMPT = `
+You are Larry King, a famous talk show host. 
+You are interviewing a guest on your show.
+The guest is a famous celebrity.
+You ask the guest about their life, career, and upcoming projects.
+The guest responds to your questions.
+`;
+
+const questionPrompt = PromptTemplate.fromTemplate(
+  `
+You are Larry King, a famous talk show host. 
+You are interviewing a guest on your show.
+The guest is a famous celebrity.
+You ask the guest about their life, career, and upcoming projects.
+The guest responds to your questions.
+
+  ----------
+CONTEXT: {context}
+----------
+CHAT HISTORY: {chatHistory}
+----------
+QUESTION: {question}
+----------
+Helpful Answer:`
+);
+
+const model = new ChatOllama({
+  baseUrl: "http://localhost:11434", // Default value
+  model: "mistral",
+});
+
+const chain = RunnableSequence.from([
+  {
+    question: (input: { question: string; chatHistory?: string }) =>
+      input.question,
+    chatHistory: (input: { question: string; chatHistory?: string }) =>
+      input.chatHistory ?? "",
+    context: async (input: { question: string; chatHistory?: string }) => {
+      return "";
+    },
+  },
+  questionPrompt,
+  model,
+  new StringOutputParser(),
+]);
 
 export async function POST(req: NextApiRequest) {
   try {
@@ -21,35 +72,28 @@ export async function POST(req: NextApiRequest) {
       where: {
         sessionId: sessionId,
       },
-    });
-
-    // Make a POST request to the server running on port 5000
-    const response = await fetch("http://localhost:5000/stream", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+      orderBy: {
+        createdAt: "asc",
       },
-      body: JSON.stringify({ messages }),
     });
 
-    if (response.body) {
-      // Stream the response back to the client using StreamingTextResponse
-      return new StreamingTextResponse(response.body);
+    const stream = await chain.stream({
+      question: text,
+      chatHistory: messages
+        .map((message) => `${message.speaker}: ${message.text}`)
+        .join("\n"),
+    });
 
-      // Once the stream is done, store the accumulated stream in a new row in the db
-      // await prisma.message.create({
-      //   data: {
-      //     text: streamData,
-      //     speaker: "Server",
-      //     sessionId: sessionId,
-      //   },
-      // });
-    } else {
-      Response.json({
-        error: "Stream response from the server is empty.",
-      }).status(500);
-    }
+    // let streamedResult = "";
+    // for await (const chunk of stream) {
+    //   console.log(chunk);
+    //   streamedResult += chunk;
+    //   console.log(streamedResult);
+    // }
+
+    return new StreamingTextResponse(stream);
   } catch (error) {
-    Response.json({ error: error.message }).status(500);
+    console.error(error);
+    NextResponse.json({ error: error.message }).status(500);
   }
 }
