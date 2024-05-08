@@ -9,12 +9,11 @@ interface HomeProps {
 
 export default async function Home() {
   const cookieStore = cookies();
-  const {value: sessionId }= cookieStore.get("session-id");
+  const { value: sessionId } = cookieStore.get("session-id");
 
   if (!sessionId) {
     throw new Error("Session ID is required");
   }
-  console.log("Session ID:", sessionId);
 
   const messages: UIMessage[] = await prisma.message.findMany({
     where: {
