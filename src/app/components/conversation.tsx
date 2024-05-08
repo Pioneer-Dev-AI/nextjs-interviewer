@@ -4,7 +4,6 @@ import { useState } from "react";
 
 import { SessionId, UIMessage } from "@/types";
 
-
 interface Props {
   messages: UIMessage[];
   sessionId: SessionId;
@@ -52,17 +51,21 @@ export default function Conversation({
       },
     ]);
 
+    let highestIndex = -1;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      let textChunk = new TextDecoder("utf-8").decode(value);
+      let {chunk, index}: { chunk: string; index: number } = JSON.parse(
+        new TextDecoder("utf-8").decode(value)
+      );
       setMessages((prevMessages) => {
         const newMessages = [...prevMessages];
         const lastMessageIndex = newMessages.length - 1;
-        if (lastMessageIndex >= 0 && textChunk) {
-          newMessages[lastMessageIndex].text += textChunk;
+        if (lastMessageIndex >= 0 && chunk && index > highestIndex) {
+          newMessages[lastMessageIndex].text += chunk;
         }
+        highestIndex = Math.max(highestIndex, index);
         return newMessages;
       });
     }

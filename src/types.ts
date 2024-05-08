@@ -1,6 +1,6 @@
 export type SessionId = string;
 
-interface UIMessage {
+export interface UIMessage {
   text: string;
   speaker: "user" | "larry";
   sessionId: SessionId;

@@ -1,42 +1,29 @@
-import { NextApiRequest, NextApiResponse, NextResponse } from "next";
+import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/db.server";
 import { StreamingTextResponse } from "ai";
 import { ChatOllama } from "@langchain/community/chat_models/ollama";
-import { LLMChain } from "langchain/chains";
+import { RunnableSequence } from "@langchain/core/runnables";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { RunnableSequence } from "@langchain/core/runnables";
 
-const PROMPT = `
+// An example prompt with multiple input variables
+const multipleInputPrompt = new PromptTemplate({
+  inputVariables: ["context", "chatHistory", "question"],
+  template: "system\n{context}\nuser\n{chatHistory}\nassistant\n{question}",
+});
+
+const model = new ChatOllama({
+  baseUrl: "http://localhost:11434", // Default value
+  model: "llama3",
+});
+
+const CONTEXT = `
 You are Larry King, a famous talk show host. 
 You are interviewing a guest on your show.
 The guest is a famous celebrity.
 You ask the guest about their life, career, and upcoming projects.
 The guest responds to your questions.
 `;
-
-const questionPrompt = PromptTemplate.fromTemplate(
-  `
-You are Larry King, a famous talk show host. 
-You are interviewing a guest on your show.
-The guest is a famous celebrity.
-You ask the guest about their life, career, and upcoming projects.
-The guest responds to your questions.
-
-  ----------
-CONTEXT: {context}
-----------
-CHAT HISTORY: {chatHistory}
-----------
-QUESTION: {question}
-----------
-Helpful Answer:`
-);
-
-const model = new ChatOllama({
-  baseUrl: "http://localhost:11434", // Default value
-  model: "mistral",
-});
 
 const chain = RunnableSequence.from([
   {
@@ -48,12 +35,12 @@ const chain = RunnableSequence.from([
       return "";
     },
   },
-  questionPrompt,
+  multipleInputPrompt,
   model,
   new StringOutputParser(),
 ]);
 
-export async function POST(req: NextApiRequest) {
+export async function POST(req: NextRequest) {
   try {
     // Retrieve the session ID and the message text from the request body
     const { sessionId, text } = await req.json();
@@ -77,23 +64,44 @@ export async function POST(req: NextApiRequest) {
       },
     });
 
-    const stream = await chain.stream({
+    // Concatenate chat history for the prompt
+    const chatHistory = messages
+      .map((msg) => `${msg.speaker}: ${msg.text}`)
+      .join("\n");
+
+    // Format the prompt with the current chat history and question
+    const formattedPrompt = await multipleInputPrompt.format({
+      context: CONTEXT,
+      chatHistory: chatHistory,
       question: text,
-      chatHistory: messages
-        .map((message) => `${message.speaker}: ${message.text}`)
-        .join("\n"),
     });
 
-    // let streamedResult = "";
-    // for await (const chunk of stream) {
-    //   console.log(chunk);
-    //   streamedResult += chunk;
-    //   console.log(streamedResult);
-    // }
+    const stream = await chain.stream({
+      question: formattedPrompt,
+      chatHistory,
+    });
 
-    return new StreamingTextResponse(stream);
+    // Index the stream to keep track of the order of the responses
+    const indexedStream = new ReadableStream({
+      async start(controller) {
+        let index = 0;
+        for await (const chunk of stream) {
+          controller.enqueue(JSON.stringify({ chunk, index: index++ }));
+        }
+        controller.close();
+      },
+    });
+
+    return new StreamingTextResponse(indexedStream);
   } catch (error) {
     console.error(error);
-    NextResponse.json({ error: error.message }).status(500);
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    } else {
+      return NextResponse.json(
+        { error: "An unknown error occurred" },
+        { status: 500 }
+      );
+    }
   }
 }
