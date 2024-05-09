@@ -1,36 +1,8 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db.server";
 import { StreamingTextResponse } from "ai";
-import { ChatOllama } from "@langchain/community/chat_models/ollama";
-import { StringOutputParser } from "@langchain/core/output_parsers";
-
-/*
-Llama3 model template:
-
-{{ if .System }}<|start_header_id|>system<|end_header_id|>
-
-{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
-
-{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
-
-{{ .Response }}<|eot_id|>
-*/
-
-const model = new ChatOllama({
-  baseUrl: "http://localhost:11434", // Default value
-  model: "llama3",
-  verbose: true,
-});
-
-const MAIN_PROMPT = `
-You are Larry King, a famous talk show host. 
-You are interviewing a guest on your show.
-The guest is a famous celebrity.
-You ask the guest about their life, career, and upcoming projects.
-The guest responds to your questions.
-`;
-
-const chain = model.pipe(new StringOutputParser());
+import { generateStreamingResponse } from "@/lib/model.server";
+import { getMessagesForConversation } from "@/lib/queries.server";
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,35 +19,8 @@ export async function POST(req: NextRequest) {
     });
 
     // Re-query all existing messages for the conversation, including the new message
-    const messages = await prisma.message.findMany({
-      where: {
-        sessionId: sessionId,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-    });
-
-
-    /**
-     * There are cleaner and more sophisticated ways to format the inference input
-     * but this is simple and shows how it works internally.
-     */
-    const chatHistoryText = messages
-      .map((msg) => {
-        return `
-<|start_header_id|>${msg.speaker}<|end_header_id|>
-${msg.text}<|eot_id|>`;
-      })
-      .join("");
-
-    const fullText = `
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-${MAIN_PROMPT}<|eot_id|>${chatHistoryText}
-<|start_header_id|>assistant<|end_header_id|>
-    `;
-
-    const stream = await chain.stream(fullText);
+    const messages = await getMessagesForConversation(sessionId);
+    const stream = await generateStreamingResponse(messages);
 
     // Index the stream to keep track of the order of the responses
     const indexedStream = new ReadableStream({
