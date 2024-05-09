@@ -1,30 +1,19 @@
-import { prisma } from "@/db.server";
-import { SessionId, UIMessage } from "@/types";
-import Conversation from "@/app/components/conversation";
 import { cookies } from "next/headers";
-
-interface HomeProps {
-  sessionId: SessionId;
-}
+import Conversation from "@/app/components/conversation";
+import { Message } from "@/lib/types";
+import { getMessagesForConversation } from "@/lib/queries.server";
 
 export default async function Home() {
   const cookieStore = cookies();
-  const { value: sessionId } = cookieStore.get("session-id");
-
-  if (!sessionId) {
+  const sessionIdCookie = cookieStore.get("session-id");
+  if (!sessionIdCookie) {
     throw new Error("Session ID is required");
   }
+  const sessionId = sessionIdCookie.value;
 
-  const messages: UIMessage[] = await prisma.message.findMany({
-    where: {
-      sessionId: sessionId,
-    },
-    select: {
-      text: true,
-      speaker: true,
-      sessionId: true,
-    },
-  });
+  const messages: Message[] = await getMessagesForConversation(sessionId);
+  console.log(messages);
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <h1 className="text-4xl font-bold">Larry King Interviewer</h1>

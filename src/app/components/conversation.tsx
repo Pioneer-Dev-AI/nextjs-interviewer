@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
-import { SessionId, UIMessage } from "@/types";
+import { SessionId, Message } from "@/lib/types";
 
 interface Props {
-  messages: UIMessage[];
+  messages: Message[];
   sessionId: SessionId;
 }
 
@@ -13,24 +13,37 @@ export default function Conversation({
   messages: inputMessages,
   sessionId,
 }: Props) {
-  const [messages, setMessages] = useState<UIMessage[]>(inputMessages);
+  const [messages, setMessages] = useState<Message[]>(inputMessages);
   const [inputValue, setInputValue] = useState("");
+
+  const createAddMessage = useCallback(
+    ({ text, speaker }: { text: string; speaker: "user" | "assistant" }) => {
+      const newMessage = {
+        text: text,
+        speaker: speaker,
+        sessionId: sessionId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        id: -1, // Placeholder ID until persisted to the database
+      };
+      setMessages((prevMessages) => {
+        return [...prevMessages, newMessage];
+      });
+      return newMessage;
+    },
+    [sessionId, setMessages]
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const newMessage: UIMessage = {
-      text: inputValue,
-      speaker: "user",
-      sessionId: sessionId,
-    };
-    setMessages((prevMessages) => [...prevMessages, newMessage]); // Optimistically update UI in a callback
+    const newMessage = createAddMessage({ text: inputValue, speaker: "user" });
     setInputValue(""); // Clear input field
 
     // Send the message to the server
     await fetchStream("/api/answers/stream", newMessage);
   }
 
-  async function fetchStream(url: string, message: UIMessage) {
+  async function fetchStream(url: string, message: Message) {
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -42,14 +55,10 @@ export default function Conversation({
     if (!response.body) throw new Error("Response body is null");
     const reader = response.body.getReader();
     // add in the initial response
-    setMessages((prevMessages) => [
-      ...prevMessages,
-      {
-        text: "",
-        speaker: "assistant",
-        sessionId: sessionId,
-      },
-    ]);
+    createAddMessage({
+      text: "",
+      speaker: "assistant",
+    });
 
     let highestIndex = -1;
     while (true) {

@@ -1,9 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
-import { prisma } from "@/db.server";
+import { prisma } from "@/lib/db.server";
 import { StreamingTextResponse } from "ai";
 import { ChatOllama } from "@langchain/community/chat_models/ollama";
-import { RunnableSequence } from "@langchain/core/runnables";
-import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 
 /*
@@ -34,7 +32,6 @@ The guest responds to your questions.
 
 const chain = model.pipe(new StringOutputParser());
 
-
 export async function POST(req: NextRequest) {
   try {
     // Retrieve the session ID and the message text from the request body
@@ -61,10 +58,12 @@ export async function POST(req: NextRequest) {
 
     // Concatenate chat history for the prompt
 
-    const chatHistoryText = messages.map((msg) => {
-      return `\n<|start_header_id|>${msg.speaker}<|end_header_id|>
+    const chatHistoryText = messages
+      .map((msg) => {
+        return `\n<|start_header_id|>${msg.speaker}<|end_header_id|>
       ${msg.text}<|eot_id|>`;
-    }).join("");
+      })
+      .join("");
 
     const fullText = `
     <|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -78,10 +77,19 @@ export async function POST(req: NextRequest) {
     const indexedStream = new ReadableStream({
       async start(controller) {
         let index = 0;
+        let assistantMessage = "";
         for await (const chunk of stream) {
+          assistantMessage += chunk;
           controller.enqueue(JSON.stringify({ chunk, index: index++ }));
         }
         controller.close();
+        await prisma.message.create({
+          data: {
+            text: assistantMessage,
+            speaker: "assistant",
+            sessionId: sessionId,
+          },
+        });
       },
     });
 

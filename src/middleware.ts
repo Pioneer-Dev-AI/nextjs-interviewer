@@ -4,8 +4,8 @@ import type { NextRequest } from "next/server";
 // Simulated function to check if the session ID exists and create one if it doesn't
 function getSessionIdAndSetIfMissing(req: NextRequest) {
   const cookies = req.cookies;
-  let sessionId = cookies["session-id"];
-
+  const sessionIdCookie = cookies.get("session-id");
+  let sessionId = sessionIdCookie?.value;
   if (!sessionId) {
     sessionId = generateNewSessionId(); // You need to define how to generate a session ID
     const response = NextResponse.next();
@@ -21,8 +21,6 @@ function getSessionIdAndSetIfMissing(req: NextRequest) {
 
 export function middleware(req: NextRequest) {
   return getSessionIdAndSetIfMissing(req);
-  console.log("Middleware is running");
-  return NextResponse.next();
 }
 
 function generateNewSessionId() {
