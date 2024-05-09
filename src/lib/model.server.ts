@@ -1,6 +1,6 @@
 import { ChatOllama } from "@langchain/community/chat_models/ollama";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { type Message } from "@/lib/types";
+import { type Message } from "@prisma/client";
 
 /*
 Llama3 model template:
@@ -54,7 +54,4 @@ function formatMessagesForLLM(messages: Message[]): string {
 
 export function generateStreamingResponse(messages: Message[]) {
   return chain.stream(formatMessagesForLLM(messages));
-}
-export function generateSimpleResponse(messages: Message[]) {
-  return chain.invoke(formatMessagesForLLM(messages));
 }

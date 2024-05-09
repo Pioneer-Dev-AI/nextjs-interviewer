@@ -1,5 +1,6 @@
+import { type Message } from "@prisma/client";
+
 import { prisma } from "@/lib/db.server";
-import { Message } from "@/lib/types";
 
 export async function getMessagesForConversation(
   sessionId: string,

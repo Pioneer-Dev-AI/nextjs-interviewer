@@ -3,19 +3,27 @@ import { prisma } from "@/lib/db.server";
 import { StreamingTextResponse } from "ai";
 import { generateStreamAndSaveAssistantResponse } from "@/lib/stream.server";
 import { getMessagesForConversation } from "@/lib/queries.server";
+import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
   try {
+    const cookieStore = cookies();
     // Retrieve the session ID and the message text from the request body
-    const { sessionId, text } = await req.json();
+    const { name } = await req.json();
+    const sessionId = crypto.randomUUID();
+    cookieStore.set("session-id", sessionId, {
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+    });
 
     // Store the message from the user
     await prisma.message.create({
       data: {
-        text: text,
+        text: `Hi Larry, my name is ${name}. Excited for you to interview me!`,
         speaker: "user",
         sessionId: sessionId,
-        hidden: false,
+        hidden: true,
       },
     });
 

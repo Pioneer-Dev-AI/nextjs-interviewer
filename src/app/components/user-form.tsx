@@ -1,34 +1,37 @@
-import { seedNewConversation } from "@/lib/interviewer.server";
-import { cookies } from "next/headers";
+import { Message } from "@prisma/client";
+import { useState } from "react";
 
-export default function UserForm() {
-  async function startConversation(formData: FormData) {
-    "use server"
-    console.log("Starting conversation with", formData.get("name"));
-    const cookieStore = cookies();
-    const sessionId = crypto.randomUUID();
-    const name = formData.get("name");
+export default function UserForm({
+  processReader,
+}: {
+  processReader: (reader: ReadableStreamDefaultReader<Uint8Array>) => void;
+}) {
+  const [name, setName] = useState("");
+
+  async function startConversation(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     if (!name) {
-      throw new Error("No message content provided");
-    }
-    const nameEntry = formData.get("name");
-    if (!nameEntry) {
       throw new Error("No name provided");
     }
-    await seedNewConversation({
-      name: nameEntry.toString(),
-      sessionId: sessionId,
+    // Send the initial message to the server
+    const response = await fetch("/api/start-conversation/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+      }),
     });
-    cookieStore.set("session-id", sessionId, {
-      httpOnly: true,
-      sameSite: "strict",
-      path: "/",
-    });
+
+    if (!response.body) throw new Error("Response body is null");
+    const reader = response.body.getReader();
+    processReader(reader);
   }
 
   return (
     <form
-      action={startConversation}
+      onSubmit={startConversation}
       className="flex flex-col items-center bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4"
     >
       <div className="mb-4">
@@ -43,6 +46,8 @@ export default function UserForm() {
           id="name"
           name="name"
           required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
         />
       </div>
@@ -51,7 +56,7 @@ export default function UserForm() {
           type="submit"
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
         >
-          Submit
+          Start Conversation
         </button>
       </div>
     </form>

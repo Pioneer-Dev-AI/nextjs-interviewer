@@ -1,29 +1,27 @@
 import { cookies } from "next/headers";
+import { Message } from "@prisma/client";
+
 import Conversation from "@/app/components/conversation";
-import { Message } from "@/lib/types";
 import { getMessagesForConversation } from "@/lib/queries.server";
-import UserForm from "./components/user-form";
+import UserForm from "@/app/components/user-form";
+import Wrapper from "@/app/components/wrapper";
 
 export default async function Home() {
   const cookieStore = cookies();
   const sessionIdCookie = cookieStore.get("session-id");
-
-  const getInnerContent = async () => {
-    if (sessionIdCookie) {
-      const sessionId = sessionIdCookie.value;
-      const messages: Message[] = await getMessagesForConversation(sessionId);
-      if (messages.length === 0) {
-        return <UserForm />;
-      }
-      return <Conversation messages={messages} sessionId={sessionId} />;
-    }
-    return <UserForm />;
-  };
+  let messages: Message[] = [];
+  let sessionId = null;
+  if (sessionIdCookie) {
+    sessionId = sessionIdCookie.value;
+    messages = await getMessagesForConversation(sessionId);
+    // Filter out hidden messages
+    messages = messages.filter((message) => !message.hidden);
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <h1 className="text-4xl font-bold">Larry King Interviewer</h1>
-      {getInnerContent()}
+      <Wrapper messages={messages} sessionId={sessionId} />
     </main>
   );
 }

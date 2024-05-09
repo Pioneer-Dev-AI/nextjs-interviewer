@@ -8,10 +8,11 @@ generator client {
 }
 
 model Message {
-    id        Int      @id @default(autoincrement())
-    text      String
-    speaker   String
-    sessionId String
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  text      String
+  speaker   String
+  sessionId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  hidden    Boolean  @default(false)
 }
