@@ -36,6 +36,10 @@ export default function Conversation({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    return submitAndStream();
+  }
+
+  async function submitAndStream() {
     const newMessage = createAddMessage({ text: inputValue, speaker: "user" });
     setInputValue(""); // Clear input field
 
@@ -99,6 +103,13 @@ export default function Conversation({
           onChange={(e) => setInputValue(e.target.value)}
           className="w-full rounded border p-2"
           placeholder="Type your message here..."
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              // Check for Enter key except when Shift is also pressed
+              event.preventDefault(); // Prevent the default action to avoid newline in textarea
+              submitAndStream();
+            }
+          }}
         />
         <button
           type="submit"

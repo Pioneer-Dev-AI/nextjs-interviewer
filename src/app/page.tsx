@@ -10,10 +10,8 @@ export default async function Home() {
     throw new Error("Session ID is required");
   }
   const sessionId = sessionIdCookie.value;
-
   const messages: Message[] = await getMessagesForConversation(sessionId);
-  console.log(messages);
-
+  
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <h1 className="text-4xl font-bold">Larry King Interviewer</h1>

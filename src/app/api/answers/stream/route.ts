@@ -56,19 +56,23 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Concatenate chat history for the prompt
 
+    /**
+     * There are cleaner and more sophisticated ways to format the inference input
+     * but this is simple and shows how it works internally.
+     */
     const chatHistoryText = messages
       .map((msg) => {
-        return `\n<|start_header_id|>${msg.speaker}<|end_header_id|>
-      ${msg.text}<|eot_id|>`;
+        return `
+<|start_header_id|>${msg.speaker}<|end_header_id|>
+${msg.text}<|eot_id|>`;
       })
       .join("");
 
     const fullText = `
-    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-    ${MAIN_PROMPT}<|eot_id|>${chatHistoryText}
-    <|start_header_id|>assistant<|end_header_id|>
+<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+${MAIN_PROMPT}<|eot_id|>${chatHistoryText}
+<|start_header_id|>assistant<|end_header_id|>
     `;
 
     const stream = await chain.stream(fullText);
