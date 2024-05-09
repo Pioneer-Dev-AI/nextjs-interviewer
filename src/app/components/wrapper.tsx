@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Message } from "@prisma/client";
 
 import Conversation from "@/app/components/conversation";
@@ -29,6 +29,8 @@ export default function Wrapper({
 }) {
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [messages, setMessages] = useState<Message[]>(inputMessages);
+  // use an array buffer to store the streaming message
+  const [pendingMessgeBuffer, setPendingMessageBuffer] = useState<string[]>([]);
   const highestIndexRef = useRef(-1);
   const processReader = useCallback(
     (reader: ReadableStreamDefaultReader<Uint8Array>) => {
@@ -38,42 +40,61 @@ export default function Wrapper({
           if (done) break;
           const payload = new TextDecoder("utf-8").decode(value);
           const streamMessages = parseConcatenatedJSON(payload);
-
           streamMessages.forEach(({ action, index, value }) => {
-            setMessages((prevMessages) => {
-            const newMessages = [...prevMessages];
-              console.log("Updated highest index:", highestIndexRef.current);
+            setPendingMessageBuffer((prevBuffer) => {
+              console.log("action", action, value, index);
               if (index <= highestIndexRef.current) {
-                console.log("Skipping message with index", action, value, index);
-                return prevMessages;
-              }
-              console.log("Processing message with index", action, value, index);
-              if (action === "assistantResponse") {
-                if (newMessages.length === 0) {
-                  newMessages.push({
-                    text: "",
-                    speaker: "assistant",
-                    sessionId: sessionId || "",
-                    hidden: false,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                    id: -1, // Placeholder ID until persisted
-                  });
-                }
-                const lastMessageIndex = newMessages.length - 1;
-                newMessages[lastMessageIndex].text += value;
-              } else if (action === "sessionId") {
-                setSessionId(value);
+                return prevBuffer;
               }
               highestIndexRef.current = index;
-              return newMessages;
+              if (action === "assistantResponse") {
+                console.log("new buffer", [...prevBuffer, value])
+                return [...prevBuffer, value];
+              }
+              if (action === "sessionId") {
+                setSessionId(value);
+              }
+              return prevBuffer;
             });
           });
         }
       })();
     },
-    [sessionId, setMessages, setSessionId]
+    [setPendingMessageBuffer, setSessionId]
   );
+
+  useEffect(() => {
+    setMessages((prevMessages) => {
+      console.log("pendingMessgeBuffer", pendingMessgeBuffer, prevMessages);
+      if (pendingMessgeBuffer.length === 0 || prevMessages.length === 0) {
+        return prevMessages;
+      }
+      const previousMessage = prevMessages[prevMessages.length - 1];
+      // if the previous message was from the user, we need to initialize the assistant message
+      if (previousMessage.speaker === "user") {
+        return [
+          ...prevMessages,
+          {
+            text: pendingMessgeBuffer.join(""),
+            speaker: "assistant",
+            sessionId: previousMessage.sessionId,
+            hidden: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            id: -1,
+          },
+        ];
+      }
+      if (previousMessage.speaker === "assistant") {
+        const updatedMessages = [...prevMessages];
+        updatedMessages[updatedMessages.length - 1].text =
+          pendingMessgeBuffer.join("");
+        return updatedMessages;
+      }
+      // should never reach here
+      return prevMessages;
+    });
+  }, [setMessages, pendingMessgeBuffer]);
 
   const createUserReply = useCallback(
     (inputValue: string) => {
