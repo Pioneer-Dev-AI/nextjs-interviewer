@@ -6,18 +6,25 @@ import { RunnableSequence } from "@langchain/core/runnables";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 
-// An example prompt with multiple input variables
-const multipleInputPrompt = new PromptTemplate({
-  inputVariables: ["context", "chatHistory", "question"],
-  template: "system\n{context}\nuser\n{chatHistory}\nassistant\n{question}",
-});
+/*
+Llama3 model template:
+
+{{ if .System }}<|start_header_id|>system<|end_header_id|>
+
+{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
+
+{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ .Response }}<|eot_id|>
+*/
 
 const model = new ChatOllama({
   baseUrl: "http://localhost:11434", // Default value
   model: "llama3",
+  verbose: true,
 });
 
-const CONTEXT = `
+const MAIN_PROMPT = `
 You are Larry King, a famous talk show host. 
 You are interviewing a guest on your show.
 The guest is a famous celebrity.
@@ -25,20 +32,8 @@ You ask the guest about their life, career, and upcoming projects.
 The guest responds to your questions.
 `;
 
-const chain = RunnableSequence.from([
-  {
-    question: (input: { question: string; chatHistory?: string }) =>
-      input.question,
-    chatHistory: (input: { question: string; chatHistory?: string }) =>
-      input.chatHistory ?? "",
-    context: async (input: { question: string; chatHistory?: string }) => {
-      return "";
-    },
-  },
-  multipleInputPrompt,
-  model,
-  new StringOutputParser(),
-]);
+const chain = model.pipe(new StringOutputParser());
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,7 +44,7 @@ export async function POST(req: NextRequest) {
     await prisma.message.create({
       data: {
         text: text,
-        speaker: "User",
+        speaker: "user",
         sessionId: sessionId,
       },
     });
@@ -65,21 +60,19 @@ export async function POST(req: NextRequest) {
     });
 
     // Concatenate chat history for the prompt
-    const chatHistory = messages
-      .map((msg) => `${msg.speaker}: ${msg.text}`)
-      .join("\n");
 
-    // Format the prompt with the current chat history and question
-    const formattedPrompt = await multipleInputPrompt.format({
-      context: CONTEXT,
-      chatHistory: chatHistory,
-      question: text,
-    });
+    const chatHistoryText = messages.map((msg) => {
+      return `\n<|start_header_id|>${msg.speaker}<|end_header_id|>
+      ${msg.text}<|eot_id|>`;
+    }).join("");
 
-    const stream = await chain.stream({
-      question: formattedPrompt,
-      chatHistory,
-    });
+    const fullText = `
+    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    ${MAIN_PROMPT}<|eot_id|>${chatHistoryText}
+    <|start_header_id|>assistant<|end_header_id|>
+    `;
+
+    const stream = await chain.stream(fullText);
 
     // Index the stream to keep track of the order of the responses
     const indexedStream = new ReadableStream({

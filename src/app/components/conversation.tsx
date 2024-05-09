@@ -46,7 +46,7 @@ export default function Conversation({
       ...prevMessages,
       {
         text: "",
-        speaker: "larry",
+        speaker: "assistant",
         sessionId: sessionId,
       },
     ]);
@@ -55,19 +55,23 @@ export default function Conversation({
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      const payload = new TextDecoder("utf-8").decode(value);
 
-      let {chunk, index}: { chunk: string; index: number } = JSON.parse(
-        new TextDecoder("utf-8").decode(value)
-      );
-      setMessages((prevMessages) => {
-        const newMessages = [...prevMessages];
-        const lastMessageIndex = newMessages.length - 1;
-        if (lastMessageIndex >= 0 && chunk && index > highestIndex) {
-          newMessages[lastMessageIndex].text += chunk;
-        }
-        highestIndex = Math.max(highestIndex, index);
-        return newMessages;
-      });
+      try {
+        let { chunk, index }: { chunk: string; index: number } =
+          JSON.parse(payload);
+        setMessages((prevMessages) => {
+          const newMessages = [...prevMessages];
+          const lastMessageIndex = newMessages.length - 1;
+          if (lastMessageIndex >= 0 && chunk && index > highestIndex) {
+            newMessages[lastMessageIndex].text += chunk;
+          }
+          highestIndex = Math.max(highestIndex, index);
+          return newMessages;
+        });
+      } catch (error) {
+        console.error("error parsing response:", payload, error);
+      }
     }
   }
 
