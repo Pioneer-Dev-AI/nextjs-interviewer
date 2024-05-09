@@ -1,126 +1,147 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useReducer } from "react";
 import { Message } from "@prisma/client";
 
 import Conversation from "@/app/components/conversation";
 import UserForm from "@/app/components/user-form";
-import { StreamMessage } from "@/lib/types";
 
-function parseConcatenatedJSON(input: string) {
-  const results = input
+interface StreamMessage {
+  action: string;
+  index: number;
+  value: string | null;
+}
+
+function parseConcatenatedJSON(input: string): StreamMessage[] {
+  return input
     .split("\n")
-    .map((line) => {
+    .map((line: string) => {
       const trimmedLine = line.trim();
-      if (trimmedLine === "") {
-        return null;
-      }
-      return JSON.parse(trimmedLine);
+      return trimmedLine ? JSON.parse(trimmedLine) : null;
     })
     .filter((result): result is StreamMessage => result !== null);
-  return results;
+}
+
+interface MessageState {
+  sessionId: string | null;
+  messages: Message[];
+}
+
+type MessageAction =
+  | { type: "SET_SESSION_ID"; sessionId: string }
+  | { type: "ADD_MESSAGE"; message: Message }
+  | { type: "APPEND_ASSISTANT_MESSAGE"; chunk: string };
+
+
+/**
+ * We use a reducer here because with strict mode, we have problems with
+ * the asyncronous nature of the assistant state updates that get batched.
+ * Using a reducer ensures that the state updates are synchronous and only happen once
+ */
+const messageReducer = (
+  state: MessageState,
+  action: MessageAction
+): MessageState => {
+  switch (action.type) {
+    case "SET_SESSION_ID":
+      return { ...state, sessionId: action.sessionId };
+    case "ADD_MESSAGE":
+      return { ...state, messages: [...state.messages, action.message] };
+    case "APPEND_ASSISTANT_MESSAGE":
+      if (
+        state.messages.length === 0 ||
+        state.messages[state.messages.length - 1].speaker === "user"
+      ) {
+        const newAssistantMessage = {
+          text: action.chunk,
+          speaker: "assistant",
+          sessionId: state.sessionId || "",
+          hidden: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          id: -1, // Placeholder ID until persisted to the database
+        };
+        return { ...state, messages: [...state.messages, newAssistantMessage] };
+      } else {
+        const lastMessage = state.messages[state.messages.length - 1];
+        // immutable update the message
+        const updatedMessages = [
+          ...state.messages.slice(0, -1),
+          {
+            ...lastMessage,
+            text: lastMessage.text + action.chunk,
+          },
+        ];
+        return { ...state, messages: updatedMessages };
+      }
+    default:
+      return state;
+  }
+};
+
+interface WrapperProps {
+  sessionId: string | null;
+  messages: Message[];
 }
 
 export default function Wrapper({
   sessionId: initialSessionId,
   messages: inputMessages,
-}: {
-  sessionId: string | null;
-  messages: Message[];
-}) {
-  const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
-  const [messages, setMessages] = useState<Message[]>(inputMessages);
-  // use an array buffer to store the streaming message
-  const [pendingMessgeBuffer, setPendingMessageBuffer] = useState<string[]>([]);
-  const highestIndexRef = useRef(-1);
-  const processReader = useCallback(
-    (reader: ReadableStreamDefaultReader<Uint8Array>) => {
-      (async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const payload = new TextDecoder("utf-8").decode(value);
-          const streamMessages = parseConcatenatedJSON(payload);
-          streamMessages.forEach(({ action, index, value }) => {
-            setPendingMessageBuffer((prevBuffer) => {
-              console.log("action", action, value, index);
-              if (index <= highestIndexRef.current) {
-                return prevBuffer;
-              }
-              highestIndexRef.current = index;
-              if (action === "assistantResponse") {
-                console.log("new buffer", [...prevBuffer, value])
-                return [...prevBuffer, value];
-              }
-              if (action === "sessionId") {
-                setSessionId(value);
-              }
-              return prevBuffer;
-            });
+}: WrapperProps) {
+  const [{ sessionId, messages }, dispatch] = useReducer(messageReducer, {
+    sessionId: initialSessionId,
+    messages: inputMessages,
+  });
+
+  async function processReader(
+    reader: ReadableStreamDefaultReader<Uint8Array>
+  ) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const payload = new TextDecoder("utf-8").decode(value);
+      const streamMessages = parseConcatenatedJSON(payload);
+
+      streamMessages.forEach(({ action, value }) => {
+        if (action === "assistantResponse" && value) {
+          dispatch({ type: "APPEND_ASSISTANT_MESSAGE", chunk: value });
+        } else if (action === "sessionId" && value) {
+          dispatch({
+            type: "SET_SESSION_ID",
+            sessionId: value,
           });
         }
-      })();
-    },
-    [setPendingMessageBuffer, setSessionId]
-  );
-
-  useEffect(() => {
-    setMessages((prevMessages) => {
-      console.log("pendingMessgeBuffer", pendingMessgeBuffer, prevMessages);
-      if (pendingMessgeBuffer.length === 0 || prevMessages.length === 0) {
-        return prevMessages;
-      }
-      const previousMessage = prevMessages[prevMessages.length - 1];
-      // if the previous message was from the user, we need to initialize the assistant message
-      if (previousMessage.speaker === "user") {
-        return [
-          ...prevMessages,
-          {
-            text: pendingMessgeBuffer.join(""),
-            speaker: "assistant",
-            sessionId: previousMessage.sessionId,
-            hidden: false,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            id: -1,
-          },
-        ];
-      }
-      if (previousMessage.speaker === "assistant") {
-        const updatedMessages = [...prevMessages];
-        updatedMessages[updatedMessages.length - 1].text =
-          pendingMessgeBuffer.join("");
-        return updatedMessages;
-      }
-      // should never reach here
-      return prevMessages;
-    });
-  }, [setMessages, pendingMessgeBuffer]);
+      });
+    }
+  }
 
   const createUserReply = useCallback(
     (inputValue: string) => {
       if (!sessionId) throw new Error("No session ID provided");
-      const newMessage = {
+      const newMessage: Message = {
         text: inputValue,
         speaker: "user",
-        sessionId: sessionId,
+        sessionId: sessionId as string,
         hidden: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         id: -1, // Placeholder ID until persisted to the database
-      };
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
+      } as Message;
+      dispatch({ type: "ADD_MESSAGE", message: newMessage });
       return newMessage;
     },
-    [sessionId, setMessages]
+    [sessionId]
   );
 
   if (!sessionId || !messages || messages.length === 0) {
-    return <UserForm {...{ processReader }} />;
+    return <UserForm processReader={processReader} />;
   }
 
   return (
     <Conversation
-      {...{ processReader, messages, sessionId, createUserReply }}
+      processReader={processReader}
+      messages={messages}
+      sessionId={sessionId}
+      createUserReply={createUserReply}
     />
   );
 }

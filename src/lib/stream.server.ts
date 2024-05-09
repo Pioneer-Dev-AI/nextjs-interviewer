@@ -34,13 +34,6 @@ export async function generateStreamAndSaveAssistantResponse(
           }) + "\n"
         );
       }
-      controller.enqueue(
-        JSON.stringify({
-          action: "stop",
-          value: null,
-          index: index++,
-        }) + "\n"
-      );
       controller.close();
       await prisma.message.create({
         data: {
