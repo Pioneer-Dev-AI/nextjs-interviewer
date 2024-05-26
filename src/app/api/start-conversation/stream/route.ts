@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
 
     // Re-query all existing messages for the conversation, including the new message
     const messages = await getMessagesForConversation(sessionId);
+    console.log("messages", messages);
     // Use generateStreamAndSaveAssistantResponse to get the indexed stream
     const indexedStream = await generateStreamAndSaveAssistantResponse(
       messages
